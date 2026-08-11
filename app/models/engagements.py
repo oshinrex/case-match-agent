@@ -1,8 +1,18 @@
+from typing import Optional
 import uuid 
 from datetime import datetime
 from sqlalchemy import DateTime, String, Text
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
+from sqlalchemy.types import UserDefinedType
+from typing import Optional
+
+class Vector(UserDefinedType):
+    def __init__(self, dimensions):
+        self.dimensions = dimensions
+
+    def get_col_spec(self, **kw):
+        return f"VECTOR({self.dimensions})"
 
 class Base(DeclarativeBase):
     pass
@@ -45,6 +55,7 @@ class Engagement(Base):
 
     # Semantic 
     case_narrative: Mapped[str] = mapped_column(Text, nullable=False)
+    embedding: Mapped[Optional[list[float]]] = mapped_column(Vector(1024), nullable=True)  
 
     # Provenance
     source_url: Mapped[str] = mapped_column(Text, nullable=True)
