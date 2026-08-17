@@ -2,6 +2,7 @@
 .venv-39/
 .env
 .env.*
+!.env.example
 __pycache__/
 *.py[cod]
 .DS_Store
