@@ -1,5 +1,10 @@
 .venv/
+.venv-39/
 .env
+.env.*
 __pycache__/
-*.pyc
+*.py[cod]
 .DS_Store
+.pytest_cache/
+.vscode/
+.idea/
