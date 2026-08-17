@@ -19,7 +19,7 @@ from sqlalchemy.orm import Session
 
 from app.agent.graph import case_match_agent
 from app.db.database import engine
-from app.services.memory import memory_stats, record_feedback
+from app.services.memory import delete_feedback, memory_stats, record_feedback
 
 app = FastAPI(
     title="Case Match Agent",
@@ -151,6 +151,19 @@ def feedback(request: FeedbackRequest) -> dict[str, Any]:
         )
 
     return {"feedback_id": str(feedback_id), "recorded": True}
+
+
+@app.delete("/api/feedback/{feedback_id}")
+def undo_feedback(feedback_id: uuid.UUID) -> dict[str, Any]:
+    """Retract a feedback vote, e.g. after a misclick."""
+
+    with Session(engine) as session:
+        removed = delete_feedback(session, feedback_id)
+
+    if not removed:
+        raise HTTPException(status_code=404, detail="Feedback not found")
+
+    return {"feedback_id": str(feedback_id), "removed": True}
 
 
 @app.get("/api/memory")

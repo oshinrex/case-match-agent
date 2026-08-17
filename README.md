@@ -16,8 +16,7 @@ the firm's memory compounds instead of resetting.
 
 ## Why this is agentic memory, not RAG
 
-The difference is the write path. Most retrieval systems read from a static index. This
-agent **reads and writes** its memory on every run:
+The difference is the write path. Most retrieval systems read from a static index. This agent **reads and writes** its memory on every run:
 
 | | Static RAG | Case Match |
 |---|---|---|

@@ -223,17 +223,20 @@ function renderPrecedents(d) {
       ${p.why_relevant ? `<div class="field"><div class="k">Why relevant</div>${esc(p.why_relevant)}</div>` : ''}
       ${p.key_differences ? `<div class="field"><div class="k">What doesn't transfer</div>${esc(p.key_differences)}</div>` : ''}
       <div class="field"><div class="k">Outcome</div>${esc(p.outcome)}</div>
-      <div class="row">
+      <div class="row" data-fb-row="${p.id}">
         <button class="ghost" data-fb="1" data-id="${p.id}" data-name="${esc(p.client_name)}">Useful precedent</button>
         <button class="ghost" data-fb="0" data-id="${p.id}" data-name="${esc(p.client_name)}">Not relevant</button>
-        ${p.feedback_score ? `<span class="hint">memory score ${p.feedback_score > 0 ? '+' : ''}${p.feedback_score}</span>` : ''}
+        <span class="hint" data-fb-score>${p.feedback_score ? `memory score ${p.feedback_score > 0 ? '+' : ''}${p.feedback_score}` : ''}</span>
       </div>
     </div>`).join('');
 
   $('prec').querySelectorAll('[data-fb]').forEach(btn => {
     btn.addEventListener('click', async () => {
       const useful = btn.dataset.fb === '1';
-      await fetch('/api/feedback', {
+      const row = btn.closest('[data-fb-row]');
+
+      btn.disabled = true;
+      const r = await fetch('/api/feedback', {
         method: 'POST',
         headers: {'Content-Type': 'application/json'},
         body: JSON.stringify({
@@ -243,9 +246,28 @@ function renderPrecedents(d) {
           useful
         })
       });
-      btn.classList.add('on');
-      btn.textContent = useful ? 'Recorded as useful' : 'Recorded as not relevant';
-      btn.parentElement.querySelectorAll('[data-fb]').forEach(b => b.disabled = true);
+      const { feedback_id } = await r.json();
+
+      row.querySelectorAll('[data-fb]').forEach(b => { b.disabled = true; b.classList.add('hidden'); });
+
+      const status = document.createElement('span');
+      status.className = 'hint';
+      status.textContent = useful ? 'Recorded as useful.' : 'Recorded as not relevant.';
+
+      const undo = document.createElement('button');
+      undo.className = 'ghost';
+      undo.textContent = 'Undo';
+      undo.addEventListener('click', async () => {
+        undo.disabled = true;
+        await fetch(`/api/feedback/${feedback_id}`, { method: 'DELETE' });
+        row.querySelectorAll('[data-fb]').forEach(b => { b.disabled = false; b.classList.remove('hidden'); });
+        status.remove();
+        undo.remove();
+        loadStats();
+      });
+
+      row.appendChild(status);
+      row.appendChild(undo);
       loadStats();
     });
   });

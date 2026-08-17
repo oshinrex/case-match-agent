@@ -169,6 +169,20 @@ def record_feedback(
     return feedback.id
 
 
+def delete_feedback(db: Session, feedback_id: uuid.UUID) -> bool:
+    """Retract a feedback vote, e.g. after a misclick. Returns False if it was already gone."""
+
+    feedback = db.get(PrecedentFeedback, feedback_id)
+
+    if feedback is None:
+        return False
+
+    db.delete(feedback)
+    db.commit()
+
+    return True
+
+
 def memory_stats(db: Session) -> dict[str, Any]:
     """Summary counters for the demo UI, showing memory accumulating live."""
 
