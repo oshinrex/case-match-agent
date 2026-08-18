@@ -70,7 +70,7 @@ def embed_case(state: CaseMatchState) -> Dict[str, Any]:
         "trace": _step(
             state,
             "embed",
-            f"Embedded the case with Amazon Titan V2 ({len(embedding)} dimensions).",
+            "Read the situation and prepared it for search.",
         ),
     }
 
@@ -119,7 +119,7 @@ def retrieve(state: CaseMatchState) -> Dict[str, Any]:
         "trace": _step(
             state,
             "retrieve",
-            f"Vector search over engagements returned {len(engagements)} candidates.",
+            f"Searched the case library and found {len(engagements)} candidate matches.",
         ),
     }
 
@@ -183,8 +183,8 @@ def broaden_search(state: CaseMatchState) -> Dict[str, Any]:
         "trace": _step(
             state,
             "broaden",
-            "First set was weak, so the agent dropped the industry preference "
-            f"and searched cross-industry, returning {len(engagements)} candidates.",
+            "The first pass didn't turn up strong matches, so the search "
+            f"widened beyond this industry, returning {len(engagements)} candidates.",
         ),
     }
 
@@ -252,7 +252,7 @@ def remember(state: CaseMatchState) -> Dict[str, Any]:
         "trace": _step(
             state,
             "remember",
-            "Wrote this run to CockroachDB. The firm's memory now includes it.",
+            "Saved this search so future lookups can learn from it.",
         ),
     }
 

@@ -9,12 +9,7 @@ language a consultant can put in a pitch.
 import json
 from typing import Any, Optional
 
-import boto3
-
-from app.config import BEDROCK_MODEL_ID as MODEL_ID
-from app.config import BEDROCK_REGION
-
-bedrock = boto3.client("bedrock-runtime", region_name=BEDROCK_REGION)
+from app.services.bedrock import invoke_json
 
 
 def _summarize_candidates(engagements: list[dict[str, Any]]) -> list[dict[str, Any]]:
@@ -35,52 +30,6 @@ def _summarize_candidates(engagements: list[dict[str, Any]]) -> list[dict[str, A
         }
         for i, e in enumerate(engagements, start=1)
     ]
-
-
-def _invoke_json(prompt: str, max_tokens: int = 1200, temperature: float = 0.2) -> dict:
-    """
-    Call Bedrock and parse a JSON object out of the reply.
-
-    Models wrap JSON in markdown fences often enough that stripping them is
-    not optional; we also fall back to slicing between the outermost braces
-    so one stray sentence of preamble cannot break a live demo.
-    """
-
-    response = bedrock.invoke_model(
-        modelId=MODEL_ID,
-        body=json.dumps(
-            {
-                "messages": [{"role": "user", "content": [{"text": prompt}]}],
-                "inferenceConfig": {
-                    "maxTokens": max_tokens,
-                    "temperature": temperature,
-                },
-            }
-        ),
-        contentType="application/json",
-        accept="application/json",
-    )
-
-    body = json.loads(response["body"].read())
-    text = body["output"]["message"]["content"][0]["text"].strip()
-
-    if text.startswith("```"):
-        text = text.split("\n", 1)[1] if "\n" in text else text
-        text = text.removeprefix("json").strip()
-
-    if text.endswith("```"):
-        text = text[: -3].strip()
-
-    try:
-        return json.loads(text)
-    except json.JSONDecodeError:
-        start = text.find("{")
-        end = text.rfind("}")
-
-        if start == -1 or end == -1:
-            raise
-
-        return json.loads(text[start : end + 1])
 
 
 def _format_recalled(recalled: Optional[list[dict[str, Any]]]) -> str:
@@ -146,7 +95,7 @@ Return ONLY valid JSON:
 Set good_enough to false if the candidates are weak, generic, or
 insufficiently relevant."""
 
-    return _invoke_json(prompt, max_tokens=400, temperature=0.1)
+    return invoke_json(prompt, max_tokens=400, temperature=0.1)
 
 
 def rank_precedents(
@@ -205,4 +154,4 @@ Return ONLY valid JSON in this exact shape:
 
 Include one entry in "assessments" for every candidate, in rank order."""
 
-    return _invoke_json(prompt, max_tokens=2000, temperature=0.2)
+    return invoke_json(prompt, max_tokens=2000, temperature=0.2)

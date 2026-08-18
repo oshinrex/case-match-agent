@@ -1,0 +1,810 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Case Match</title>
+<style>
+  /* Self-hosted so the brand fonts render regardless of network policy
+     (corporate proxies and ad/privacy blockers routinely block Google's
+     font CDN) - both are variable fonts, one file covers every weight. */
+  @font-face {
+    font-family: 'Inter';
+    font-style: normal;
+    font-weight: 400 700;
+    font-display: swap;
+    src: url('/static/fonts/inter-latin-var.woff2') format('woff2');
+  }
+  @font-face {
+    font-family: 'Space Grotesk';
+    font-style: normal;
+    font-weight: 500 700;
+    font-display: swap;
+    src: url('/static/fonts/space-grotesk-latin-var.woff2') format('woff2');
+  }
+  :root {
+    --bg: #ffffff;
+    --panel: #ffffff;
+    --panel-2: #f2f3f5;
+    --panel-3: #fafbfc;
+    --border: #d7dbe0;
+    --border-strong: #b9c0c9;
+    --text: #1f2328;
+    --muted: #67707a;
+    --accent: #1a7f37;
+    --accent-dark: #14602a;
+    --accent-bg: #e9f6ec;
+    --warn: #8a6100;
+    --warn-bg: #fbf1da;
+    --danger: #b42318;
+    --danger-bg: #fbeae8;
+    --font-ui: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Arial, sans-serif;
+    --font-display: 'Space Grotesk', var(--font-ui);
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--text);
+    font: 14.5px/1.55 var(--font-ui);
+  }
+  .wrap { max-width: 1180px; margin: 0 auto; padding: 24px 24px 80px; }
+
+  /* ---------------- toolbar ---------------- */
+  .toolbar {
+    display: flex; justify-content: space-between; align-items: center;
+    flex-wrap: wrap; gap: 10px;
+    padding: 14px 20px; margin-bottom: 0;
+    background: var(--panel-2); border: 1px solid var(--border-strong); border-bottom: none;
+  }
+  .toolbar h1 { margin: 0; font: 700 21px var(--font-display); letter-spacing: -0.01em; }
+  .toolbar a.brand-link { text-decoration: none; color: inherit; }
+  .toolbar .sub { color: var(--muted); font-size: 13px; margin-top: 2px; }
+  .stat-strip { display: flex; gap: 0; }
+  .stat-item {
+    padding: 0 18px; border-left: 1px solid var(--border-strong); text-align: right;
+  }
+  .stat-item:first-child { border-left: none; }
+  .stat-item b { font-size: 17px; font-variant-numeric: tabular-nums; }
+  .stat-item .l { display: block; color: var(--muted); font-size: 11px; text-transform: uppercase; letter-spacing: .04em; margin-top: 1px; }
+
+  /* ---------------- tabs (worksheet-style) ---------------- */
+  .tabs { display: flex; gap: 2px; padding: 8px 8px 0; background: var(--panel-2);
+    border: 1px solid var(--border-strong); border-top: none; border-bottom: none; }
+  .tab-btn {
+    background: var(--panel-2); border: 1px solid var(--border-strong); border-bottom: none;
+    color: var(--muted); padding: 8px 16px; font: inherit; font-size: 14px; font-weight: 600;
+    cursor: pointer; border-radius: 4px 4px 0 0; position: relative; top: 1px;
+  }
+  .tab-btn:hover:not(.active) { color: var(--text); }
+  .tab-btn.active { background: #fff; color: var(--text); border-color: var(--border-strong); border-bottom: 1px solid #fff; }
+
+  .tab-content-wrap {
+    border: 1px solid var(--border-strong); background: #fff; padding: 20px; margin-bottom: 28px;
+  }
+  .tab-panel.hidden { display: none; }
+
+  /* ---------------- form basics ---------------- */
+  textarea, input[type=text], input[type=url], input[type=file], select {
+    width: 100%; background: #fff; color: var(--text);
+    border: 1px solid var(--border-strong); border-radius: 3px; padding: 8px 10px;
+    font: inherit; resize: vertical;
+  }
+  textarea:focus, input:focus, select:focus { outline: 2px solid var(--accent); outline-offset: -1px; }
+  .row { display: flex; gap: 10px; margin-top: 10px; align-items: center; flex-wrap: wrap; }
+  .row select { max-width: 240px; }
+
+  button:not(.tab-btn) {
+    background: var(--accent); color: #fff; border: 1px solid var(--accent-dark); border-radius: 3px;
+    padding: 8px 16px; font: inherit; font-size: 14px; font-weight: 600; cursor: pointer; white-space: nowrap;
+  }
+  button:not(.tab-btn):hover:not(:disabled) { background: var(--accent-dark); }
+  button:disabled { opacity: .5; cursor: not-allowed; }
+  button.ghost {
+    background: #fff; border: 1px solid var(--border-strong);
+    color: var(--text); font-weight: 500; padding: 6px 12px; font-size: 13px;
+  }
+  button.ghost:hover:not(:disabled) { border-color: var(--accent); color: var(--accent-dark); background: var(--accent-bg); }
+
+  section { margin-top: 24px; }
+  h2 {
+    font-size: 12px; text-transform: uppercase; letter-spacing: .05em;
+    color: var(--muted); margin: 0 0 10px; font-weight: 700;
+  }
+  h3 { font-size: 16px; margin: 0 0 4px; font-family: var(--font-display); }
+
+  .hint { color: var(--muted); font-size: 13px; }
+  .err { color: var(--danger); }
+  .ok-msg { color: var(--accent-dark); }
+  .hidden { display: none; }
+
+  .spinner {
+    display: inline-block; width: 11px; height: 11px; margin-right: 7px;
+    border: 2px solid var(--border-strong); border-top-color: var(--muted);
+    border-radius: 50%; animation: spin .7s linear infinite; vertical-align: -1px;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  /* ---------------- tags ---------------- */
+  .tag {
+    display: inline-block; font-size: 11px; padding: 1px 7px; border-radius: 3px;
+    margin-left: 6px; border: 1px solid; text-transform: uppercase; letter-spacing: .03em;
+    font-weight: 600; vertical-align: 1px;
+  }
+  .tag.best { color: var(--accent-dark); background: var(--accent-bg); border-color: var(--accent); }
+  .tag.cross { color: var(--warn); background: var(--warn-bg); border-color: var(--warn); }
+  .tag.seen { color: var(--accent-dark); background: var(--accent-bg); border-color: var(--accent); }
+
+  /* ---------------- data tables ---------------- */
+  .table-scroll { overflow-x: auto; border: 1px solid var(--border); }
+  table.data-table { width: 100%; border-collapse: collapse; font-size: 14px; }
+  .data-table th, .data-table td { border: 1px solid var(--border); padding: 7px 10px; text-align: left; vertical-align: top; }
+  .data-table th {
+    background: var(--panel-2); font-size: 11px; text-transform: uppercase; letter-spacing: .04em;
+    color: var(--muted); font-weight: 700; white-space: nowrap;
+  }
+  .data-table td.num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+  .data-table tbody tr:hover { background: var(--panel-3); }
+  .data-table tr.row-best td:first-child { border-left: 3px solid var(--accent); }
+  .data-table tr.detail-row td { background: var(--panel-3); }
+  .data-table tr.detail-row:hover { background: var(--panel-3); }
+  .match-pct { font-weight: 700; }
+  .match-sub { color: var(--muted); font-size: 12px; margin-top: 1px; }
+
+  .kv-grid { display: grid; grid-template-columns: 160px 1fr; gap: 6px 14px; max-width: 760px; }
+  .kv-grid .k { color: var(--muted); font-size: 12px; text-transform: uppercase; letter-spacing: .04em; padding-top: 1px; }
+  .kv-grid .v { font-size: 14px; }
+
+  .draft-box {
+    border: 1px solid var(--border); background: var(--panel-3); padding: 14px 16px;
+    white-space: pre-wrap; line-height: 1.65; font-size: 14.5px;
+  }
+
+  .feedback-row { display: flex; gap: 10px; align-items: center; margin-top: 10px; flex-wrap: wrap; }
+
+  /* ---------------- add a case: entry sheet ---------------- */
+  .upload-box {
+    border: 1px solid var(--border); background: var(--panel-3); padding: 14px 16px; margin-bottom: 20px;
+  }
+  .upload-box input[type=file] { max-width: 320px; display: inline-block; width: auto; }
+
+  table.entry-table { width: 100%; border-collapse: collapse; margin-bottom: 20px; border: 1px solid var(--border-strong); }
+  .entry-table td { border: 1px solid var(--border); padding: 0; vertical-align: top; }
+  .entry-table tr.group-header td {
+    background: var(--panel-2); font-weight: 700; font-size: 12px; text-transform: uppercase;
+    letter-spacing: .04em; color: var(--muted); padding: 6px 10px; border-top: 1px solid var(--border-strong);
+  }
+  .entry-table .label-cell {
+    width: 220px; background: var(--panel-3); font-size: 13.5px; color: var(--text); padding: 8px 10px;
+  }
+  .entry-table .label-cell .req { color: var(--warn); }
+  .entry-table .input-cell { padding: 2px; }
+  .entry-table .input-cell input, .entry-table .input-cell textarea {
+    border: 1px solid transparent; width: 100%; padding: 7px 9px; font: inherit; background: transparent;
+    border-radius: 0; resize: vertical;
+  }
+  .entry-table .input-cell input:focus, .entry-table .input-cell textarea:focus {
+    outline: none; border: 1px solid var(--accent); background: #fff;
+  }
+  .entry-table .input-cell textarea { min-height: 56px; }
+  .entry-table .field-hint { font-size: 12px; color: var(--muted); padding: 0 9px 8px; }
+
+  /* ---------------- case library ---------------- */
+  .lib-toolbar { display: flex; gap: 10px; }
+  .lib-toolbar input { flex: 1; }
+  .empty { color: var(--muted); padding: 20px 0; }
+  .detail-toggle { font-size: 13px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <div class="toolbar">
+    <div>
+      <h1><a class="brand-link" href="/">Case Match</a></h1>
+      <div class="sub">Find the right past engagement for a new client situation, and grow the case library as you go.</div>
+    </div>
+    <div class="stat-strip">
+      <div class="stat-item"><b id="s-eng">—</b><span class="l">Cases</span></div>
+      <div class="stat-item"><b id="s-int">—</b><span class="l">Searches</span></div>
+      <div class="stat-item"><b id="s-fb">—</b><span class="l">Feedback</span></div>
+    </div>
+  </div>
+
+  <nav class="tabs">
+    <button class="tab-btn active" data-tab="find">Find a Precedent</button>
+    <button class="tab-btn" data-tab="add">Add a Case</button>
+    <button class="tab-btn" data-tab="library">Case Library</button>
+  </nav>
+
+  <div class="tab-content-wrap">
+
+  <!-- ============ FIND A PRECEDENT ============ -->
+  <div class="tab-panel" id="tab-find">
+
+    <textarea id="q" rows="4" placeholder="Describe the new client situation…"></textarea>
+    <div class="row">
+      <select id="cat">
+        <option value="">No industry preference</option>
+        <option>Healthcare</option>
+        <option>Retail</option>
+        <option>Financial Services</option>
+        <option>Manufacturing</option>
+        <option>Energy</option>
+        <option>Technology</option>
+      </select>
+      <button id="go">Find precedents</button>
+      <span class="hint" id="status"></span>
+    </div>
+
+    <section id="recall-sec" class="hidden">
+      <h2>Similar past searches</h2>
+      <div class="table-scroll"><table class="data-table">
+        <thead><tr><th>Date</th><th>Prior situation</th><th>Precedent chosen</th><th>Why</th><th class="num">Similarity</th></tr></thead>
+        <tbody id="recall"></tbody>
+      </table></div>
+    </section>
+
+    <section id="trace-sec" class="hidden">
+      <h2>How this was found</h2>
+      <div class="table-scroll"><table class="data-table">
+        <thead><tr><th style="width:200px">Step</th><th>Detail</th></tr></thead>
+        <tbody id="trace"></tbody>
+      </table></div>
+    </section>
+
+    <section id="prec-sec" class="hidden">
+      <h2>Ranked matches</h2>
+      <div class="table-scroll"><table class="data-table">
+        <thead><tr>
+          <th>#</th><th>Client</th><th>Industry</th><th>Service line / scale</th><th class="num">Match</th><th></th>
+        </tr></thead>
+        <tbody id="prec"></tbody>
+      </table></div>
+    </section>
+
+    <section id="draft-sec" class="hidden">
+      <h2>Suggested pitch language</h2>
+      <div class="draft-box" id="draft"></div>
+    </section>
+
+  </div>
+
+  <!-- ============ ADD A CASE ============ -->
+  <div class="tab-panel hidden" id="tab-add">
+
+    <div class="upload-box">
+      <h3>Start from a document (optional)</h3>
+      <div class="hint">Upload a case study PDF and we'll fill out the sheet below for you to review before saving.</div>
+      <div class="row">
+        <input type="file" id="pdf-file" accept="application/pdf">
+        <button id="extract-btn">Fill in from PDF</button>
+        <span class="hint" id="extract-status"></span>
+      </div>
+    </div>
+
+    <form id="case-form"></form>
+
+    <div class="row">
+      <button type="submit" form="case-form" id="save-case-btn">Save case</button>
+      <button type="button" class="ghost" id="case-reset">Clear form</button>
+      <span class="hint" id="case-status"></span>
+    </div>
+
+  </div>
+
+  <!-- ============ CASE LIBRARY ============ -->
+  <div class="tab-panel hidden" id="tab-library">
+
+    <div class="lib-toolbar">
+      <input type="text" id="lib-search" placeholder="Search by client, industry, or keyword…">
+      <button id="lib-search-btn">Search</button>
+    </div>
+    <div class="hint" id="lib-count" style="margin:10px 0;"></div>
+
+    <div class="table-scroll"><table class="data-table">
+      <thead><tr><th>Client</th><th>Industry</th><th>Service line</th><th>Scale</th><th>Added</th><th></th></tr></thead>
+      <tbody id="lib-list"></tbody>
+    </table></div>
+    <div class="row">
+      <button class="ghost hidden" id="lib-more">Load more</button>
+    </div>
+
+  </div>
+
+  </div>
+
+</div>
+
+<script>
+const $ = id => document.getElementById(id);
+let interactionId = null;
+
+function esc(s) {
+  return String(s ?? '').replace(/[&<>"]/g, c =>
+    ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+}
+
+// Reads an error response as JSON if possible, otherwise falls back to raw
+// text or the HTTP status line, so a non-JSON error (proxy timeout, unhandled
+// exception) never surfaces as a confusing "not valid JSON" message.
+async function errorMessage(response) {
+  const body = await response.text();
+  try {
+    return JSON.parse(body).detail || response.statusText;
+  } catch {
+    return body || response.statusText;
+  }
+}
+
+/* ---------------- tabs ---------------- */
+
+const TABS = ['find', 'add', 'library'];
+let libraryLoaded = false;
+
+document.querySelectorAll('.tab-btn').forEach(btn => {
+  btn.addEventListener('click', () => {
+    const tab = btn.dataset.tab;
+    document.querySelectorAll('.tab-btn').forEach(b => b.classList.toggle('active', b === btn));
+    TABS.forEach(t => $(`tab-${t}`).classList.toggle('hidden', t !== tab));
+    if (tab === 'library' && !libraryLoaded) {
+      libraryLoaded = true;
+      loadLibrary();
+    }
+  });
+});
+
+/* ---------------- stats ---------------- */
+
+async function loadStats() {
+  try {
+    const r = await fetch('/api/stats');
+    const d = await r.json();
+    $('s-eng').textContent = d.engagements_indexed;
+    $('s-int').textContent = d.interactions_remembered;
+    $('s-fb').textContent  = d.feedback_recorded;
+  } catch (e) { /* stats are non-critical; never block on them */ }
+}
+
+/* ============================================================
+   FIND A PRECEDENT
+   ============================================================ */
+
+const STEP_LABELS = {
+  embed: 'Preparing',
+  recall: 'Checking past searches',
+  retrieve: 'Searching',
+  evaluate: 'Reviewing results',
+  broaden: 'Broadening the search',
+  select_precedent: 'Selecting the best match',
+  select: 'Selecting the best match',
+  remember: 'Saving this search',
+};
+
+function renderRecall(recalled) {
+  const sec = $('recall-sec');
+  if (!recalled || !recalled.length) { sec.classList.add('hidden'); return; }
+  sec.classList.remove('hidden');
+  $('recall').innerHTML = recalled.map(r => `
+    <tr>
+      <td>${esc(r.created_at ? r.created_at.slice(0,10) : '')}</td>
+      <td>${esc(r.query)}</td>
+      <td>${esc(r.selected_client)} <span class="hint">(${esc(r.selected_industry)})</span></td>
+      <td>${esc(r.reason || '')}</td>
+      <td class="num">${Math.round((r.similarity||0)*100)}%</td>
+    </tr>`).join('');
+}
+
+function renderPrecedents(d) {
+  $('prec-sec').classList.remove('hidden');
+  $('prec').innerHTML = d.precedents.map((p, i) => `
+    <tr class="${p.is_best ? 'row-best' : ''}" data-row="${i}">
+      <td>${p.rank}</td>
+      <td>${esc(p.client_name)}
+        ${p.is_best ? '<span class="tag best">strongest</span>' : ''}
+        ${!p.same_industry ? '<span class="tag cross">cross-industry</span>' : ''}
+      </td>
+      <td>${esc(p.industry)}</td>
+      <td>${esc(p.service_line || '')}${p.service_line && p.project_scale ? ' · ' : ''}${esc(p.project_scale || '')}</td>
+      <td class="num">
+        <div class="match-pct">${Math.round(p.relevance * 100)}%</div>
+        <div class="match-sub">${Math.round(p.similarity * 100)}% similar${p.boosted ? ' · boosted' : ''}</div>
+      </td>
+      <td><button class="ghost detail-toggle" data-toggle="${i}">Details</button></td>
+    </tr>
+    <tr class="detail-row hidden" data-detail="${i}">
+      <td colspan="6">
+        ${p.why_relevant ? `<div class="kv-grid" style="margin-bottom:8px;"><div class="k">Why relevant</div><div class="v">${esc(p.why_relevant)}</div></div>` : ''}
+        ${p.key_differences ? `<div class="kv-grid" style="margin-bottom:8px;"><div class="k">What doesn't transfer</div><div class="v">${esc(p.key_differences)}</div></div>` : ''}
+        <div class="kv-grid" style="margin-bottom:8px;"><div class="k">Outcome</div><div class="v">${esc(p.outcome)}</div></div>
+        <div class="feedback-row" data-fb-row="${p.id}">
+          <button class="ghost" data-fb="1" data-id="${p.id}" data-name="${esc(p.client_name)}">Useful precedent</button>
+          <button class="ghost" data-fb="0" data-id="${p.id}" data-name="${esc(p.client_name)}">Not relevant</button>
+          <span class="hint" data-fb-score>${p.feedback_score ? `feedback score ${p.feedback_score > 0 ? '+' : ''}${p.feedback_score}` : ''}</span>
+        </div>
+      </td>
+    </tr>`).join('');
+
+  $('prec').querySelectorAll('[data-toggle]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const i = btn.dataset.toggle;
+      $('prec').querySelector(`[data-detail="${i}"]`).classList.toggle('hidden');
+    });
+  });
+
+  $('prec').querySelectorAll('[data-fb]').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      const useful = btn.dataset.fb === '1';
+      const row = btn.closest('[data-fb-row]');
+
+      btn.disabled = true;
+      const r = await fetch('/api/feedback', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({
+          engagement_id: btn.dataset.id,
+          client_name: btn.dataset.name,
+          interaction_id: interactionId,
+          useful
+        })
+      });
+      const { feedback_id } = await r.json();
+
+      row.querySelectorAll('[data-fb]').forEach(b => { b.disabled = true; b.classList.add('hidden'); });
+
+      const status = document.createElement('span');
+      status.className = 'hint';
+      status.textContent = useful ? 'Recorded as useful.' : 'Recorded as not relevant.';
+
+      const undo = document.createElement('button');
+      undo.className = 'ghost';
+      undo.textContent = 'Undo';
+      undo.addEventListener('click', async () => {
+        undo.disabled = true;
+        await fetch(`/api/feedback/${feedback_id}`, { method: 'DELETE' });
+        row.querySelectorAll('[data-fb]').forEach(b => { b.disabled = false; b.classList.remove('hidden'); });
+        status.remove();
+        undo.remove();
+        loadStats();
+      });
+
+      row.appendChild(status);
+      row.appendChild(undo);
+      loadStats();
+    });
+  });
+}
+
+async function run() {
+  const query = $('q').value.trim();
+  if (query.length < 10) { $('status').textContent = 'Describe the situation in a bit more detail.'; return; }
+
+  $('go').disabled = true;
+  $('status').innerHTML = '<span class="spinner"></span>Searching the case library…';
+  ['recall-sec','trace-sec','prec-sec','draft-sec'].forEach(s => $(s).classList.add('hidden'));
+
+  try {
+    const r = await fetch('/api/match', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({ query, category: $('cat').value || null })
+    });
+    if (!r.ok) throw new Error(await errorMessage(r));
+    const d = await r.json();
+    interactionId = d.interaction_id;
+
+    renderRecall(d.recalled);
+
+    $('trace-sec').classList.remove('hidden');
+    $('trace').innerHTML = d.trace.map(t =>
+      `<tr><td><b>${esc(STEP_LABELS[t.step] || t.step)}</b></td><td>${esc(t.detail)}</td></tr>`
+    ).join('');
+
+    renderPrecedents(d);
+
+    $('draft-sec').classList.remove('hidden');
+    $('draft').textContent = d.relevant_experience || '';
+
+    $('status').textContent =
+      `${d.precedents.length} match${d.precedents.length === 1 ? '' : 'es'} found`;
+    loadStats();
+  } catch (e) {
+    $('status').innerHTML = `<span class="err">${esc(e.message)}</span>`;
+  } finally {
+    $('go').disabled = false;
+  }
+}
+
+$('go').addEventListener('click', run);
+
+/* ============================================================
+   ADD A CASE
+   ============================================================ */
+
+const FIELD_GROUPS = [
+  {
+    legend: 'Client & engagement',
+    fields: [
+      { name: 'client_name', label: 'Client name', required: true },
+      { name: 'industry', label: 'Industry', required: true },
+      { name: 'service_line', label: 'Service line' },
+      { name: 'engagement_type', label: 'Engagement type' },
+    ],
+  },
+  {
+    legend: 'The situation',
+    fields: [
+      { name: 'business_problem', label: 'Business problem', required: true, area: true },
+      { name: 'business_capabilities', label: 'Business capabilities involved' },
+    ],
+  },
+  {
+    legend: 'What we did',
+    fields: [
+      { name: 'solution', label: 'Solution', required: true, area: true },
+      { name: 'technology_stack', label: 'Technology stack' },
+      { name: 'architecture_patterns', label: 'Architecture patterns' },
+    ],
+  },
+  {
+    legend: 'Results',
+    fields: [
+      { name: 'outcome', label: 'Outcome', required: true, area: true },
+      { name: 'financial_impact', label: 'Financial impact', area: true },
+    ],
+  },
+  {
+    legend: 'Scale & relationship',
+    fields: [
+      { name: 'company_size', label: 'Company size' },
+      { name: 'project_scale', label: 'Project scale' },
+      { name: 'investment', label: 'Investment' },
+      { name: 'client_relationship', label: 'Client relationship' },
+      { name: 'relationship_duration', label: 'Relationship duration' },
+      { name: 'relationship_context', label: 'Relationship context', area: true },
+    ],
+  },
+  {
+    legend: 'Summary (optional)',
+    fields: [
+      {
+        name: 'case_narrative', label: 'Case summary', area: true,
+        hint: "Used to match this case in future searches. Leave blank and we'll write one from the fields above.",
+      },
+      { name: 'source_url', label: 'Source link' },
+    ],
+  },
+];
+
+function buildCaseForm() {
+  const form = $('case-form');
+  form.innerHTML = `<table class="entry-table"><tbody>` + FIELD_GROUPS.map(group => `
+    <tr class="group-header"><td colspan="2">${esc(group.legend)}</td></tr>
+    ${group.fields.map(f => `
+      <tr>
+        <td class="label-cell">${esc(f.label)}${f.required ? ' <span class="req">*</span>' : ''}</td>
+        <td class="input-cell">
+          ${f.area
+            ? `<textarea id="f-${f.name}" name="${f.name}" rows="2" ${f.required ? 'required' : ''}></textarea>`
+            : `<input type="text" id="f-${f.name}" name="${f.name}" ${f.required ? 'required' : ''}>`}
+          ${f.hint ? `<div class="field-hint">${esc(f.hint)}</div>` : ''}
+        </td>
+      </tr>
+    `).join('')}
+  `).join('') + `</tbody></table>`;
+}
+
+function fillCaseForm(fields) {
+  Object.entries(fields || {}).forEach(([name, value]) => {
+    const el = $(`f-${name}`);
+    if (el && value !== null && value !== undefined && value !== '') {
+      el.value = value;
+    }
+  });
+}
+
+function readCaseForm() {
+  const data = {};
+  FIELD_GROUPS.flatMap(g => g.fields).forEach(f => {
+    const el = $(`f-${f.name}`);
+    const value = el.value.trim();
+    data[f.name] = value === '' ? null : value;
+  });
+  return data;
+}
+
+buildCaseForm();
+
+$('extract-btn').addEventListener('click', async () => {
+  const file = $('pdf-file').files[0];
+  if (!file) { $('extract-status').innerHTML = '<span class="err">Choose a PDF first.</span>'; return; }
+
+  $('extract-btn').disabled = true;
+  $('extract-status').innerHTML = '<span class="spinner"></span>Reading the document…';
+
+  try {
+    const formData = new FormData();
+    formData.append('file', file);
+    const r = await fetch('/api/cases/extract', { method: 'POST', body: formData });
+    if (!r.ok) throw new Error(await errorMessage(r));
+    const d = await r.json();
+    fillCaseForm(d.fields);
+    $('extract-status').innerHTML = '<span class="ok-msg">Filled in from the document — please review every field before saving.</span>';
+  } catch (e) {
+    $('extract-status').innerHTML = `<span class="err">${esc(e.message)}</span>`;
+  } finally {
+    $('extract-btn').disabled = false;
+  }
+});
+
+$('case-reset').addEventListener('click', () => {
+  $('case-form').reset();
+  $('pdf-file').value = '';
+  $('extract-status').textContent = '';
+  $('case-status').textContent = '';
+});
+
+$('case-form').addEventListener('submit', async (e) => {
+  e.preventDefault();
+
+  $('save-case-btn').disabled = true;
+  $('case-status').innerHTML = '<span class="spinner"></span>Saving…';
+
+  try {
+    const payload = readCaseForm();
+    const r = await fetch('/api/cases', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+    if (!r.ok) throw new Error(await errorMessage(r));
+    await r.json();
+
+    $('case-status').innerHTML = '<span class="ok-msg">Saved to the case library.</span>';
+    $('case-form').reset();
+    $('pdf-file').value = '';
+    $('extract-status').textContent = '';
+    loadStats();
+    libraryLoaded = false; // force a refresh next time the library tab is opened
+  } catch (e) {
+    $('case-status').innerHTML = `<span class="err">${esc(e.message)}</span>`;
+  } finally {
+    $('save-case-btn').disabled = false;
+  }
+});
+
+/* ============================================================
+   CASE LIBRARY
+   ============================================================ */
+
+const LIB_PAGE_SIZE = 20;
+let libOffset = 0;
+let libQuery = '';
+let libTotal = 0;
+const libDetailCache = {};
+
+function relativeDate(iso) {
+  if (!iso) return '';
+  const then = new Date(iso);
+  const days = Math.floor((Date.now() - then.getTime()) / 86400000);
+  if (days <= 0) return 'Today';
+  if (days === 1) return 'Yesterday';
+  if (days < 30) return `${days}d ago`;
+  return then.toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' });
+}
+
+function caseRowHtml(c, i) {
+  return `
+    <tr data-case-id="${c.id}">
+      <td>${esc(c.client_name)}</td>
+      <td>${esc(c.industry)}</td>
+      <td>${esc(c.service_line || '')}</td>
+      <td>${esc(c.project_scale || '')}</td>
+      <td>${esc(relativeDate(c.created_at))}</td>
+      <td><button class="ghost detail-toggle" data-lib-toggle="${i}" data-case-id="${c.id}">Details</button></td>
+    </tr>
+    <tr class="detail-row hidden" data-lib-detail="${i}">
+      <td colspan="6"><div class="kv-grid" data-detail-for="${c.id}"><span class="hint">Loading…</span></div></td>
+    </tr>`;
+}
+
+async function loadCaseDetail(id) {
+  if (libDetailCache[id]) return libDetailCache[id];
+  const r = await fetch(`/api/cases/${id}`);
+  if (!r.ok) throw new Error('Could not load this case.');
+  const d = await r.json();
+  libDetailCache[id] = d;
+  return d;
+}
+
+function detailKvHtml(d) {
+  const rows = [
+    ['Business problem', d.business_problem],
+    ['Business capabilities', d.business_capabilities],
+    ['Solution', d.solution],
+    ['Technology stack', d.technology_stack],
+    ['Architecture patterns', d.architecture_patterns],
+    ['Outcome', d.outcome],
+    ['Financial impact', d.financial_impact],
+    ['Company size', d.company_size],
+    ['Investment', d.investment],
+    ['Client relationship', d.client_relationship],
+    ['Relationship context', d.relationship_context],
+    ['Relationship duration', d.relationship_duration],
+    ['Summary', d.case_narrative],
+    ['Source', d.source_url],
+  ].filter(([, v]) => v);
+
+  return rows.map(([k, v]) => `<div class="k">${esc(k)}</div><div class="v">${esc(v)}</div>`).join('')
+    || '<span class="hint">No further detail recorded.</span>';
+}
+
+function wireLibDetails(tbody) {
+  tbody.querySelectorAll('[data-lib-toggle]').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      const i = btn.dataset.libToggle;
+      const detailRow = tbody.querySelector(`[data-lib-detail="${i}"]`);
+      const wasHidden = detailRow.classList.contains('hidden');
+      detailRow.classList.toggle('hidden');
+      if (!wasHidden) return;
+
+      const body = detailRow.querySelector('[data-detail-for]');
+      if (body.dataset.loaded) return;
+
+      try {
+        const d = await loadCaseDetail(btn.dataset.caseId);
+        body.innerHTML = detailKvHtml(d);
+        body.dataset.loaded = '1';
+      } catch (e) {
+        body.innerHTML = `<span class="err">${esc(e.message)}</span>`;
+      }
+    });
+  });
+}
+
+async function loadLibrary(append = false) {
+  if (!append) { libOffset = 0; $('lib-list').innerHTML = ''; }
+
+  $('lib-count').textContent = 'Loading…';
+
+  try {
+    const params = new URLSearchParams({ limit: LIB_PAGE_SIZE, offset: libOffset });
+    if (libQuery) params.set('q', libQuery);
+
+    const r = await fetch(`/api/cases?${params}`);
+    if (!r.ok) throw new Error(await errorMessage(r));
+    const d = await r.json();
+    libTotal = d.total;
+
+    if (!append && d.cases.length === 0) {
+      $('lib-list').innerHTML = '<tr><td colspan="6" class="empty">No cases match yet. Add one from the "Add a Case" tab.</td></tr>';
+    } else {
+      const html = d.cases.map((c, i) => caseRowHtml(c, libOffset + i)).join('');
+      if (append) $('lib-list').insertAdjacentHTML('beforeend', html);
+      else $('lib-list').innerHTML = html;
+      wireLibDetails($('lib-list'));
+    }
+
+    libOffset += d.cases.length;
+    $('lib-count').textContent = `${libTotal} case${libTotal === 1 ? '' : 's'}${libQuery ? ` matching "${libQuery}"` : ''}`;
+    $('lib-more').classList.toggle('hidden', libOffset >= libTotal);
+  } catch (e) {
+    $('lib-count').innerHTML = `<span class="err">${esc(e.message)}</span>`;
+  }
+}
+
+$('lib-search-btn').addEventListener('click', () => {
+  libQuery = $('lib-search').value.trim();
+  loadLibrary(false);
+});
+$('lib-search').addEventListener('keydown', (e) => {
+  if (e.key === 'Enter') { e.preventDefault(); $('lib-search-btn').click(); }
+});
+$('lib-more').addEventListener('click', () => loadLibrary(true));
+
+/* ---------------- init ---------------- */
+
+loadStats();
+</script>
+</body>
+</html>

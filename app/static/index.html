@@ -3,316 +3,157 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Case Match — Agentic Institutional Memory</title>
+<title>Case Match</title>
 <style>
+  /* Self-hosted so the brand fonts render regardless of network policy
+     (corporate proxies and ad/privacy blockers routinely block Google's
+     font CDN) - both are variable fonts, one file covers every weight. */
+  @font-face {
+    font-family: 'Inter';
+    font-style: normal;
+    font-weight: 400 700;
+    font-display: swap;
+    src: url('/static/fonts/inter-latin-var.woff2') format('woff2');
+  }
+  @font-face {
+    font-family: 'Space Grotesk';
+    font-style: normal;
+    font-weight: 500 700;
+    font-display: swap;
+    src: url('/static/fonts/space-grotesk-latin-var.woff2') format('woff2');
+  }
   :root {
-    --bg: #0d1117;
-    --panel: #151b23;
-    --panel-2: #1c232d;
-    --border: #2a3441;
-    --text: #e6edf3;
-    --muted: #8b98a5;
-    --accent: #4c8dff;
-    --accent-dim: #1f3a63;
-    --good: #3fb950;
-    --warn: #d29922;
-    --crdb: #6933ff;
+    --bg: #ffffff;
+    --text: #1f2328;
+    --muted: #5b6570;
+    --border: #d7dbe0;
+    --accent: #1a7f37;
+    --accent-dark: #14602a;
+    --accent-bg: #e9f6ec;
+    --line: #e4e7eb;
+    --font-ui: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Arial, sans-serif;
+    --font-display: 'Space Grotesk', var(--font-ui);
   }
   * { box-sizing: border-box; }
+  html, body { height: 100%; }
   body {
     margin: 0;
     background: var(--bg);
     color: var(--text);
-    font: 15px/1.6 -apple-system, BlinkMacSystemFont, "Segoe UI", Inter, sans-serif;
-  }
-  .wrap { max-width: 1120px; margin: 0 auto; padding: 32px 24px 80px; }
-
-  header { border-bottom: 1px solid var(--border); padding-bottom: 20px; margin-bottom: 28px; }
-  h1 { margin: 0 0 6px; font-size: 26px; letter-spacing: -0.02em; }
-  .sub { color: var(--muted); font-size: 14px; }
-  .stack { margin-top: 10px; font-size: 12px; color: var(--muted); }
-  .chip {
-    display: inline-block; padding: 3px 9px; border-radius: 20px;
-    background: var(--panel-2); border: 1px solid var(--border); margin-right: 6px;
-  }
-  .chip.crdb { border-color: var(--crdb); color: #c4a8ff; }
-
-  .stats { display: flex; gap: 12px; margin-bottom: 24px; flex-wrap: wrap; }
-  .stat {
-    flex: 1; min-width: 150px; background: var(--panel);
-    border: 1px solid var(--border); border-radius: 10px; padding: 14px 16px;
-  }
-  .stat .n { font-size: 24px; font-weight: 600; }
-  .stat .l { font-size: 12px; color: var(--muted); text-transform: uppercase; letter-spacing: .06em; }
-  .stat.live .n { color: var(--accent); }
-
-  textarea, input, select {
-    width: 100%; background: var(--panel); color: var(--text);
-    border: 1px solid var(--border); border-radius: 8px; padding: 12px 14px;
-    font: inherit; resize: vertical;
-  }
-  textarea:focus, input:focus, select:focus { outline: none; border-color: var(--accent); }
-  .row { display: flex; gap: 12px; margin-top: 12px; align-items: center; }
-  .row select { max-width: 240px; }
-  button {
-    background: var(--accent); color: #fff; border: 0; border-radius: 8px;
-    padding: 12px 22px; font: inherit; font-weight: 600; cursor: pointer;
-  }
-  button:disabled { opacity: .5; cursor: not-allowed; }
-  button.ghost {
-    background: transparent; border: 1px solid var(--border);
-    color: var(--muted); font-weight: 500; padding: 6px 12px; font-size: 13px;
-  }
-  button.ghost:hover:not(:disabled) { border-color: var(--accent); color: var(--text); }
-  button.ghost.on { border-color: var(--good); color: var(--good); }
-
-  section { margin-top: 28px; }
-  h2 {
-    font-size: 12px; text-transform: uppercase; letter-spacing: .08em;
-    color: var(--muted); margin: 0 0 12px; font-weight: 600;
+    font: 16px/1.55 var(--font-ui);
+    overflow-x: hidden;
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
   }
 
-  .card {
-    background: var(--panel); border: 1px solid var(--border);
-    border-radius: 10px; padding: 16px 18px; margin-bottom: 12px;
+  /* faint graph-paper backdrop, nodding to the product without shouting about it */
+  .grid-bg {
+    position: fixed; inset: 0; z-index: 0; pointer-events: none;
+    background-image:
+      linear-gradient(var(--line) 1px, transparent 1px),
+      linear-gradient(90deg, var(--line) 1px, transparent 1px);
+    background-size: 56px 56px;
+    -webkit-mask-image: radial-gradient(ellipse 70% 60% at 50% 38%, #000 0%, transparent 72%);
+            mask-image: radial-gradient(ellipse 70% 60% at 50% 38%, #000 0%, transparent 72%);
   }
-  .card.best { border-color: var(--accent); background: linear-gradient(180deg, var(--accent-dim) 0%, var(--panel) 55%); }
-  .card.recall { border-color: var(--crdb); }
 
-  .head { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; }
-  .name { font-size: 17px; font-weight: 600; }
-  .meta { font-size: 12px; color: var(--muted); margin-top: 2px; }
-  .score { font-size: 20px; font-weight: 700; color: var(--accent); white-space: nowrap; }
-  .badge {
-    font-size: 10px; padding: 2px 7px; border-radius: 4px; margin-left: 8px;
-    background: var(--accent); color: #fff; text-transform: uppercase; letter-spacing: .06em;
+  .stage {
+    position: relative; z-index: 1;
+    flex: 1;
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+    text-align: center;
+    padding: 64px 24px;
   }
-  .badge.cross { background: var(--warn); color: #000; }
-  .badge.mem { background: var(--crdb); }
 
-  .field { margin-top: 10px; font-size: 14px; }
-  .field .k { color: var(--muted); font-size: 12px; text-transform: uppercase; letter-spacing: .05em; }
-
-  .trace { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12.5px; }
-  .trace div { padding: 6px 0; border-bottom: 1px solid var(--border); color: var(--muted); }
-  .trace div:last-child { border: 0; }
-  .trace b { color: var(--accent); font-weight: 600; }
-
-  .draft { white-space: pre-wrap; line-height: 1.7; }
-  .hint { color: var(--muted); font-size: 13px; }
-  .err { color: #f85149; }
-  .hidden { display: none; }
-
-  .spinner {
-    display: inline-block; width: 13px; height: 13px; margin-right: 8px;
-    border: 2px solid rgba(255,255,255,.3); border-top-color: #fff;
-    border-radius: 50%; animation: spin .7s linear infinite; vertical-align: -2px;
+  .kicker {
+    display: inline-flex; align-items: center; gap: 8px;
+    font-size: 13px; font-weight: 600; color: var(--accent-dark);
+    background: var(--accent-bg); border: 1px solid var(--accent);
+    padding: 5px 14px; border-radius: 20px; letter-spacing: .02em;
+    margin-bottom: 28px;
   }
-  @keyframes spin { to { transform: rotate(360deg); } }
+  .kicker .dot {
+    width: 6px; height: 6px; border-radius: 50%; background: var(--accent);
+  }
+
+  .wordmark {
+    font-family: var(--font-display); font-weight: 700;
+    font-size: clamp(48px, 9vw, 92px);
+    letter-spacing: -0.03em;
+    margin: 0;
+    line-height: 1.02;
+  }
+  .wordmark .accent { color: var(--accent); }
+
+  .tagline {
+    max-width: 560px;
+    margin: 22px 0 40px;
+    font-size: 19px;
+    line-height: 1.6;
+    color: var(--muted);
+  }
+
+  .cta {
+    display: inline-flex; align-items: center; gap: 10px;
+    background: var(--accent); color: #fff; text-decoration: none;
+    font: 700 17px var(--font-ui); letter-spacing: 0.01em;
+    padding: 16px 34px; border-radius: 4px; border: 1px solid var(--accent-dark);
+    transition: transform .15s ease, background .15s ease, box-shadow .15s ease;
+    box-shadow: 0 1px 2px rgba(20, 96, 42, 0.08);
+  }
+  .cta:hover {
+    background: var(--accent-dark);
+    transform: translateY(-1px);
+    box-shadow: 0 8px 20px rgba(20, 96, 42, 0.22);
+  }
+  .cta:active { transform: translateY(0); }
+  .cta svg { transition: transform .15s ease; }
+  .cta:hover svg { transform: translateX(3px); }
+
+  .features {
+    display: flex; gap: 28px; flex-wrap: wrap; justify-content: center;
+    margin-top: 56px; padding-top: 32px; border-top: 1px solid var(--border);
+    width: 100%; max-width: 640px;
+  }
+  .feature { display: flex; align-items: center; gap: 8px; font-size: 14px; color: var(--muted); font-weight: 500; }
+  .feature .dot { width: 5px; height: 5px; border-radius: 50%; background: var(--accent); flex: none; }
+
+  footer {
+    position: relative; z-index: 1;
+    text-align: center; padding: 24px; font-size: 13px; color: var(--muted);
+  }
 </style>
 </head>
 <body>
-<div class="wrap">
 
-  <header>
-    <h1>Case Match</h1>
-    <div class="sub">Agentic institutional memory for consulting precedents.</div>
-    <div class="stack">
-      <span class="chip crdb">CockroachDB vector memory</span>
-      <span class="chip">Amazon Bedrock — Titan V2 + Nova</span>
-      <span class="chip">LangGraph</span>
-      <span class="chip">AWS App Runner</span>
-    </div>
-  </header>
+<div class="grid-bg"></div>
 
-  <div class="stats">
-    <div class="stat"><div class="n" id="s-eng">—</div><div class="l">Engagements indexed</div></div>
-    <div class="stat live"><div class="n" id="s-int">—</div><div class="l">Runs remembered</div></div>
-    <div class="stat live"><div class="n" id="s-fb">—</div><div class="l">Feedback recorded</div></div>
+<div class="stage">
+  <span class="kicker"><span class="dot"></span>Institutional memory for consulting teams</span>
+
+  <h1 class="wordmark">Case<span class="accent">Match</span></h1>
+
+  <p class="tagline">
+    Find the right past engagement for any new client situation, and grow a
+    living library of your firm's work as you go.
+  </p>
+
+  <a class="cta" href="/app">
+    View demo
+    <svg width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
+      <path d="M3.5 8H12.5M12.5 8L8.5 4M12.5 8L8.5 12" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+    </svg>
+  </a>
+
+  <div class="features">
+    <div class="feature"><span class="dot"></span>Precedent search</div>
+    <div class="feature"><span class="dot"></span>PDF case intake</div>
+    <div class="feature"><span class="dot"></span>Growing case library</div>
   </div>
-
-  <textarea id="q" rows="4" placeholder="Describe the new client situation…">We are advising a large healthcare provider that needs to modernize legacy systems, migrate workloads to the cloud, and improve operational efficiency.</textarea>
-  <div class="row">
-    <select id="cat">
-      <option value="">No industry preference</option>
-      <option>Healthcare</option>
-      <option>Retail</option>
-      <option>Financial Services</option>
-      <option>Manufacturing</option>
-      <option>Energy</option>
-      <option>Technology</option>
-    </select>
-    <button id="go">Find precedents</button>
-    <span class="hint" id="status"></span>
-  </div>
-
-  <section id="recall-sec" class="hidden">
-    <h2>Recalled from memory</h2>
-    <div id="recall"></div>
-  </section>
-
-  <section id="trace-sec" class="hidden">
-    <h2>Agent reasoning trace</h2>
-    <div class="card trace" id="trace"></div>
-  </section>
-
-  <section id="prec-sec" class="hidden">
-    <h2>Ranked precedents</h2>
-    <div id="prec"></div>
-  </section>
-
-  <section id="draft-sec" class="hidden">
-    <h2>Relevant experience draft</h2>
-    <div class="card"><div class="draft" id="draft"></div></div>
-  </section>
-
 </div>
 
-<script>
-const $ = id => document.getElementById(id);
-let interactionId = null;
+<footer>Case Match</footer>
 
-async function loadStats() {
-  try {
-    const r = await fetch('/api/stats');
-    const d = await r.json();
-    $('s-eng').textContent = d.engagements_indexed;
-    $('s-int').textContent = d.interactions_remembered;
-    $('s-fb').textContent  = d.feedback_recorded;
-  } catch (e) { /* stats are cosmetic; never block the demo on them */ }
-}
-
-function esc(s) {
-  return String(s ?? '').replace(/[&<>"]/g, c =>
-    ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
-}
-
-function renderRecall(recalled) {
-  const sec = $('recall-sec');
-  if (!recalled || !recalled.length) { sec.classList.add('hidden'); return; }
-  sec.classList.remove('hidden');
-  $('recall').innerHTML = recalled.map(r => `
-    <div class="card recall">
-      <div class="head">
-        <div>
-          <div class="name">The firm has seen this before<span class="badge mem">memory</span></div>
-          <div class="meta">${esc(r.created_at || '')} · similarity ${r.similarity}</div>
-        </div>
-      </div>
-      <div class="field"><div class="k">Prior question</div>${esc(r.query)}</div>
-      <div class="field"><div class="k">Precedent chosen then</div>${esc(r.selected_client)} (${esc(r.selected_industry)})</div>
-      ${r.reason ? `<div class="field"><div class="k">Why</div>${esc(r.reason)}</div>` : ''}
-    </div>`).join('');
-}
-
-function renderPrecedents(d) {
-  $('prec-sec').classList.remove('hidden');
-  $('prec').innerHTML = d.precedents.map(p => `
-    <div class="card ${p.is_best ? 'best' : ''}">
-      <div class="head">
-        <div>
-          <div class="name">${p.rank}. ${esc(p.client_name)}
-            ${p.is_best ? '<span class="badge">strongest</span>' : ''}
-            ${!p.same_industry ? '<span class="badge cross">cross-industry</span>' : ''}
-          </div>
-          <div class="meta">${esc(p.industry)} · ${esc(p.service_line || '')} · ${esc(p.project_scale || '')}</div>
-          <div class="meta">semantic similarity ${Math.round(p.similarity * 100)}%${p.boosted ? ' · boosted by industry match and prior feedback' : ''}</div>
-        </div>
-        <div class="score">${Math.round(p.relevance * 100)}%</div>
-      </div>
-      ${p.why_relevant ? `<div class="field"><div class="k">Why relevant</div>${esc(p.why_relevant)}</div>` : ''}
-      ${p.key_differences ? `<div class="field"><div class="k">What doesn't transfer</div>${esc(p.key_differences)}</div>` : ''}
-      <div class="field"><div class="k">Outcome</div>${esc(p.outcome)}</div>
-      <div class="row" data-fb-row="${p.id}">
-        <button class="ghost" data-fb="1" data-id="${p.id}" data-name="${esc(p.client_name)}">Useful precedent</button>
-        <button class="ghost" data-fb="0" data-id="${p.id}" data-name="${esc(p.client_name)}">Not relevant</button>
-        <span class="hint" data-fb-score>${p.feedback_score ? `memory score ${p.feedback_score > 0 ? '+' : ''}${p.feedback_score}` : ''}</span>
-      </div>
-    </div>`).join('');
-
-  $('prec').querySelectorAll('[data-fb]').forEach(btn => {
-    btn.addEventListener('click', async () => {
-      const useful = btn.dataset.fb === '1';
-      const row = btn.closest('[data-fb-row]');
-
-      btn.disabled = true;
-      const r = await fetch('/api/feedback', {
-        method: 'POST',
-        headers: {'Content-Type': 'application/json'},
-        body: JSON.stringify({
-          engagement_id: btn.dataset.id,
-          client_name: btn.dataset.name,
-          interaction_id: interactionId,
-          useful
-        })
-      });
-      const { feedback_id } = await r.json();
-
-      row.querySelectorAll('[data-fb]').forEach(b => { b.disabled = true; b.classList.add('hidden'); });
-
-      const status = document.createElement('span');
-      status.className = 'hint';
-      status.textContent = useful ? 'Recorded as useful.' : 'Recorded as not relevant.';
-
-      const undo = document.createElement('button');
-      undo.className = 'ghost';
-      undo.textContent = 'Undo';
-      undo.addEventListener('click', async () => {
-        undo.disabled = true;
-        await fetch(`/api/feedback/${feedback_id}`, { method: 'DELETE' });
-        row.querySelectorAll('[data-fb]').forEach(b => { b.disabled = false; b.classList.remove('hidden'); });
-        status.remove();
-        undo.remove();
-        loadStats();
-      });
-
-      row.appendChild(status);
-      row.appendChild(undo);
-      loadStats();
-    });
-  });
-}
-
-async function run() {
-  const query = $('q').value.trim();
-  if (query.length < 10) { $('status').textContent = 'Describe the situation in a bit more detail.'; return; }
-
-  $('go').disabled = true;
-  $('status').innerHTML = '<span class="spinner"></span>Agent is searching its memory…';
-  ['recall-sec','trace-sec','prec-sec','draft-sec'].forEach(s => $(s).classList.add('hidden'));
-
-  try {
-    const r = await fetch('/api/match', {
-      method: 'POST',
-      headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({ query, category: $('cat').value || null })
-    });
-    if (!r.ok) throw new Error((await r.json()).detail || r.statusText);
-    const d = await r.json();
-    interactionId = d.interaction_id;
-
-    renderRecall(d.recalled);
-
-    $('trace-sec').classList.remove('hidden');
-    $('trace').innerHTML = d.trace.map(t => `<div><b>${esc(t.step)}</b> — ${esc(t.detail)}</div>`).join('');
-
-    renderPrecedents(d);
-
-    $('draft-sec').classList.remove('hidden');
-    $('draft').textContent = d.relevant_experience || '';
-
-    $('status').textContent =
-      `${d.search_count} search pass${d.search_count > 1 ? 'es' : ''} · ${d.retrieval_strategy} · confidence ${d.confidence ?? '—'}`;
-    loadStats();
-  } catch (e) {
-    $('status').innerHTML = `<span class="err">${esc(e.message)}</span>`;
-  } finally {
-    $('go').disabled = false;
-  }
-}
-
-$('go').addEventListener('click', run);
-loadStats();
-</script>
 </body>
 </html>

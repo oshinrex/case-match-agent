@@ -10,16 +10,20 @@ import uuid
 from pathlib import Path
 from typing import Any, Optional
 
-from fastapi import FastAPI, HTTPException
-from fastapi.responses import FileResponse
+from fastapi import FastAPI, File, HTTPException, Request, UploadFile
+from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
-from sqlalchemy import text
+from sqlalchemy import func, text
 from sqlalchemy.orm import Session
 
 from app.agent.graph import case_match_agent
 from app.db.database import engine
+from app.models.engagements import Engagement
+from app.services.embeddings import generate_embedding
+from app.services.extraction import extract_case_fields, extract_text_from_pdf
 from app.services.memory import delete_feedback, memory_stats, record_feedback
+from app.utils.formatter import format_engagement_for_embedding
 
 app = FastAPI(
     title="Case Match Agent",
@@ -29,6 +33,19 @@ app = FastAPI(
 )
 
 STATIC_DIR = Path(__file__).parent / "static"
+
+
+@app.exception_handler(Exception)
+async def unhandled_exception_handler(request: Request, exc: Exception) -> JSONResponse:
+    """
+    Guarantee every error response is JSON.
+
+    Without this, an exception that isn't already wrapped in an HTTPException
+    falls through to Starlette's plain-text 500, which breaks any client that
+    assumes `response.json()` always works.
+    """
+
+    return JSONResponse(status_code=500, content={"detail": f"Unexpected error: {exc}"})
 
 
 class MatchRequest(BaseModel):
@@ -44,6 +61,60 @@ class FeedbackRequest(BaseModel):
     interaction_id: Optional[uuid.UUID] = None
     client_name: Optional[str] = None
     note: Optional[str] = None
+
+
+class CaseCreate(BaseModel):
+    client_name: str = Field(..., min_length=1)
+    industry: str = Field(..., min_length=1)
+    service_line: Optional[str] = None
+    engagement_type: Optional[str] = None
+    client_relationship: Optional[str] = None
+    relationship_context: Optional[str] = None
+    relationship_duration: Optional[str] = None
+    business_problem: str = Field(..., min_length=1)
+    business_capabilities: Optional[str] = None
+    solution: str = Field(..., min_length=1)
+    technology_stack: Optional[str] = None
+    architecture_patterns: Optional[str] = None
+    outcome: str = Field(..., min_length=1)
+    financial_impact: Optional[str] = None
+    company_size: Optional[str] = None
+    project_scale: Optional[str] = None
+    investment: Optional[str] = None
+    case_narrative: Optional[str] = None
+    source_url: Optional[str] = None
+
+
+def _case_summary(engagement: Engagement) -> dict[str, Any]:
+    return {
+        "id": str(engagement.id),
+        "client_name": engagement.client_name,
+        "industry": engagement.industry,
+        "service_line": engagement.service_line,
+        "engagement_type": engagement.engagement_type,
+        "project_scale": engagement.project_scale,
+        "business_problem": engagement.business_problem,
+        "created_at": engagement.created_at.isoformat() if engagement.created_at else None,
+    }
+
+
+def _case_detail(engagement: Engagement) -> dict[str, Any]:
+    return {
+        **_case_summary(engagement),
+        "client_relationship": engagement.client_relationship,
+        "relationship_context": engagement.relationship_context,
+        "relationship_duration": engagement.relationship_duration,
+        "business_capabilities": engagement.business_capabilities,
+        "solution": engagement.solution,
+        "technology_stack": engagement.technology_stack,
+        "architecture_patterns": engagement.architecture_patterns,
+        "outcome": engagement.outcome,
+        "financial_impact": engagement.financial_impact,
+        "company_size": engagement.company_size,
+        "investment": engagement.investment,
+        "case_narrative": engagement.case_narrative,
+        "source_url": engagement.source_url,
+    }
 
 
 @app.get("/health")
@@ -166,6 +237,118 @@ def undo_feedback(feedback_id: uuid.UUID) -> dict[str, Any]:
     return {"feedback_id": str(feedback_id), "removed": True}
 
 
+@app.post("/api/cases/extract")
+def extract_case(file: UploadFile = File(...)) -> dict[str, Any]:
+    """
+    Read an uploaded case-study PDF and propose values for a new case.
+
+    Nothing is saved here - this only returns a draft for the consultant to
+    review, edit, and submit via POST /api/cases.
+    """
+
+    if file.content_type not in ("application/pdf", "application/x-pdf") and not (
+        file.filename or ""
+    ).lower().endswith(".pdf"):
+        raise HTTPException(status_code=400, detail="Please upload a PDF file.")
+
+    file_bytes = file.file.read()
+
+    try:
+        document_text = extract_text_from_pdf(file_bytes)
+        fields = extract_case_fields(document_text)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    except Exception as exc:  # surfaced to the UI rather than a blank 500
+        raise HTTPException(status_code=502, detail=f"Could not read this PDF: {exc}") from exc
+
+    return {"fields": fields}
+
+
+@app.post("/api/cases")
+def create_case(request: CaseCreate) -> dict[str, Any]:
+    """
+    Save a reviewed case to the library and make it searchable.
+
+    A blank case narrative is composed from the required fields, since it
+    drives semantic search and should never be empty.
+    """
+
+    data = request.model_dump()
+
+    if not data.get("case_narrative"):
+        data["case_narrative"] = (
+            f"{data['client_name']} ({data['industry']}): {data['business_problem']} "
+            f"{data['solution']} {data['outcome']}"
+        )
+
+    for optional_text_field in (
+        "business_capabilities",
+        "technology_stack",
+        "architecture_patterns",
+    ):
+        if not data.get(optional_text_field):
+            data[optional_text_field] = ""
+
+    engagement = Engagement(**data)
+    embedding_text = format_engagement_for_embedding(engagement)
+
+    try:
+        engagement.embedding = generate_embedding(embedding_text)
+    except Exception as exc:  # surfaced to the UI rather than a blank 500
+        raise HTTPException(status_code=502, detail=f"Could not save this case: {exc}") from exc
+
+    with Session(engine) as session:
+        session.add(engagement)
+        session.commit()
+        session.refresh(engagement)
+        result = _case_detail(engagement)
+
+    return result
+
+
+@app.get("/api/cases")
+def list_cases(q: Optional[str] = None, limit: int = 20, offset: int = 0) -> dict[str, Any]:
+    """Cases in the library, newest first, with optional keyword search."""
+
+    limit = max(1, min(limit, 100))
+    offset = max(0, offset)
+
+    with Session(engine) as session:
+        query = session.query(Engagement)
+
+        if q:
+            like = f"%{q}%"
+            query = query.filter(
+                Engagement.client_name.ilike(like)
+                | Engagement.industry.ilike(like)
+                | Engagement.service_line.ilike(like)
+                | Engagement.business_problem.ilike(like)
+            )
+
+        total = query.with_entities(func.count(Engagement.id)).scalar() or 0
+
+        rows = (
+            query.order_by(Engagement.created_at.desc()).offset(offset).limit(limit).all()
+        )
+
+        cases = [_case_summary(row) for row in rows]
+
+    return {"cases": cases, "total": total, "limit": limit, "offset": offset}
+
+
+@app.get("/api/cases/{case_id}")
+def get_case(case_id: uuid.UUID) -> dict[str, Any]:
+    """Full detail for one case, for the library's expanded view."""
+
+    with Session(engine) as session:
+        engagement = session.get(Engagement, case_id)
+
+        if engagement is None:
+            raise HTTPException(status_code=404, detail="Case not found")
+
+        return _case_detail(engagement)
+
+
 @app.get("/api/memory")
 def memory(limit: int = 10) -> dict[str, Any]:
     """Recent runs, so the demo can show the memory table filling up."""
@@ -207,5 +390,9 @@ if STATIC_DIR.exists():
     app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 
     @app.get("/")
-    def index() -> FileResponse:
+    def landing() -> FileResponse:
         return FileResponse(STATIC_DIR / "index.html")
+
+    @app.get("/app")
+    def index() -> FileResponse:
+        return FileResponse(STATIC_DIR / "app.html")
