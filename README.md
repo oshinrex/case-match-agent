@@ -2,6 +2,8 @@
 
 **Agentic institutional memory for consulting firms, built on CockroachDB and AWS.**
 
+**Live demo:** https://case-match-agent.vercel.app
+
 Consulting firms run thousands of engagements and forget almost all of them. When a
 partner needs the *right* precedent for a new pitch, keyword search fails, because the
 engagement that actually matters is often in a different industry entirely. The retail
@@ -9,8 +11,14 @@ supply-chain modernization you need might look most like a hospital network's lo
 overhaul.
 
 Case Match is an agent that finds **structural** precedents, explains why they transfer,
-drafts the pitch language — and **remembers every case it has ever been asked about**, so
-the firm's memory compounds instead of resetting.
+drafts the pitch language, and **remembers every case it has ever been asked about** — so
+the firm's memory compounds instead of resetting. Consultants can also grow the library
+directly from the UI: upload a case-study PDF and Bedrock proposes the structured fields
+for review, or fill them in by hand — either way the case is searchable immediately.
+
+The app has three views: **Find a Precedent** (the agent loop below), **Add a Case**
+(PDF intake or manual entry), and **Case Library** (browse and search everything the firm
+has recorded).
 
 ---
 
@@ -34,11 +42,13 @@ and why. That record lives in CockroachDB, so it survives restarts, regions, and
 
 ```mermaid
 flowchart TB
-    U[Consultant] --> UI[Web UI]
-    UI --> API[FastAPI on AWS App Runner]
-    API --> G
+    U[Consultant] --> UI[Web UI, hosted on Vercel]
+    UI --> API[FastAPI]
 
-    subgraph G[LangGraph agent]
+    API --> G
+    API --> AC
+
+    subgraph G[Find a Precedent]
       direction TB
       E[embed] --> R[recall memory]
       R --> S[vector search]
@@ -49,13 +59,23 @@ flowchart TB
       P --> W[write run to memory]
     end
 
+    subgraph AC[Add a Case]
+      direction TB
+      PDFX[optional: upload PDF] --> EX[Bedrock reads it, proposes fields]
+      EX --> RV[consultant reviews + saves]
+      RV --> EM[embed the new case]
+    end
+
     E -.->|Titan Text Embeddings V2| BR[Amazon Bedrock]
+    EX -.->|Nova| BR
     V -.->|Nova| BR
     P -.->|Nova| BR
+    EM -.->|Titan Text Embeddings V2| BR
 
     R <-->|vector search over past runs| CRDB[(CockroachDB)]
     S <-->|vector search over engagements| CRDB
     W -->|persist decision| CRDB
+    EM -->|new engagement + vector| CRDB
 
     style CRDB fill:#6933ff,color:#fff
     style BR fill:#ff9900,color:#000
@@ -113,11 +133,14 @@ it is supposed to be reading.
 
 | Service | Role |
 |---|---|
-| **Amazon Bedrock — Titan Text Embeddings V2** | Generates the 1024-dim vectors for engagements and incoming cases. One embedding per run, reused for both memory recall and engagement search. |
-| **Amazon Bedrock — Nova** | Two reasoning calls: judging whether a candidate set is strong enough (the decision that drives the agent's re-search loop), and selecting the winner + drafting pitch language. |
-| **AWS App Runner** | Hosts the containerized FastAPI agent; provides the public HTTPS demo URL. |
-| **Amazon ECR** | Stores the container image App Runner deploys. |
-| **IAM** | App Runner instance role grants `bedrock:InvokeModel`; no credentials in the image. |
+| **Amazon Bedrock — Titan Text Embeddings V2** | Generates the 1024-dim vectors for engagements and incoming cases, whether typed in or extracted from a PDF. One embedding per run, reused for both memory recall and engagement search. |
+| **Amazon Bedrock — Nova** | Three jobs: judging whether a candidate set is strong enough (the decision that drives the agent's re-search loop), selecting the winner and drafting pitch language, and reading an uploaded case-study PDF to propose structured fields for the consultant to review. |
+| **IAM** | A dedicated `case-match-vercel` user, scoped to `bedrock:InvokeModel` on only the two models above — nothing else. Its access key lives as a write-only environment variable on the hosting platform, never committed to the repo. |
+
+The live demo is deployed on [Vercel](https://vercel.com) (see [Deploy](#deploy) below).
+A `Dockerfile` is also included if you'd rather run the same app as a container on AWS
+App Runner instead — either way, Bedrock is what's doing the actual thinking, and
+CockroachDB is what's remembering it.
 
 ---
 
@@ -150,7 +173,8 @@ Run it:
 
 ```bash
 uvicorn app.main:app --reload
-# open http://localhost:8000
+# http://localhost:8000        landing page
+# http://localhost:8000/app    the app itself (Find a Precedent / Add a Case / Case Library)
 ```
 
 ### Verify
@@ -177,13 +201,72 @@ development runs. It never touches the engagements table.
 |---|---|
 | `POST /api/match` | Run the agent on a new case. Returns ranked precedents, per-precedent reasoning, the pitch draft, recalled prior cases, and the full agent trace. |
 | `POST /api/feedback` | Record a consultant's verdict on a precedent. Re-ranks it in future searches. |
+| `DELETE /api/feedback/{id}` | Retract a feedback vote. |
+| `POST /api/cases/extract` | Read an uploaded case-study PDF and propose structured field values for review. Nothing is saved yet. |
+| `POST /api/cases` | Save a reviewed case to the library. Generates its embedding and makes it searchable immediately. |
+| `GET /api/cases` | List cases in the library, newest first, with optional keyword search and pagination. |
+| `GET /api/cases/{id}` | Full detail for one case. |
 | `GET /api/memory` | Recent agent runs. |
 | `GET /api/stats` | Live memory counters. |
 | `GET /health` | Liveness probe. |
 
 ---
 
-## Deploy to AWS
+## Deploy
+
+### Vercel (what the live demo runs on)
+
+Vercel's Python runtime auto-detects the FastAPI app at `app/main.py` — no Dockerfile
+needed for this path.
+
+```bash
+npx vercel login
+npx vercel link              # creates/links the Vercel project
+
+npx vercel env add DATABASE_URL production
+npx vercel env add BEDROCK_REGION production
+npx vercel env add AWS_ACCESS_KEY_ID production       # from a scoped IAM user, below
+npx vercel env add AWS_SECRET_ACCESS_KEY production
+
+npx vercel deploy --prod
+```
+
+Function timeout is set in [`vercel.json`](vercel.json) (`maxDuration: 60`) — enough
+headroom for an agent run with several Bedrock calls in one request.
+
+**Use a scoped IAM user, not root or a personal profile's default credentials.** Create
+one limited to `bedrock:InvokeModel` on just the two models this app calls:
+
+```bash
+aws iam create-user --user-name case-match-vercel
+
+cat > bedrock-policy.json <<'EOF'
+{
+  "Version": "2012-10-17",
+  "Statement": [{
+    "Effect": "Allow",
+    "Action": "bedrock:InvokeModel",
+    "Resource": [
+      "arn:aws:bedrock:us-east-1::foundation-model/amazon.titan-embed-text-v2:0",
+      "arn:aws:bedrock:us-east-1::foundation-model/amazon.nova-lite-v1:0"
+    ]
+  }]
+}
+EOF
+
+aws iam put-user-policy --user-name case-match-vercel \
+  --policy-name BedrockInvokeCaseMatch --policy-document file://bedrock-policy.json
+
+aws iam create-access-key --user-name case-match-vercel
+```
+
+Feed the resulting `AccessKeyId` / `SecretAccessKey` into the `vercel env add` commands
+above — never into a committed file.
+
+### Alternative: AWS App Runner
+
+The repo also ships a `Dockerfile`, if you'd rather run the same app as a container on
+AWS compute instead of Vercel:
 
 ```bash
 # build and push
@@ -206,16 +289,21 @@ Then create an App Runner service from that image with:
 
 ```
 app/
-  agent/graph.py        LangGraph agent: embed -> recall -> retrieve -> evaluate -> select -> remember
-  services/memory.py    the memory layer: recall, write, feedback scoring
-  services/retrievals.py vector search + blended ranking
-  services/precedent.py Bedrock reasoning: evaluate candidates, draft the pitch
-  services/embeddings.py Titan V2 embeddings
-  models/               SQLAlchemy models incl. the VECTOR(1024) type
-  main.py               FastAPI + demo UI
-scripts/                schema, seeding, embedding, memory reset
-tests/                  runnable verification scripts
-data/engagements.json   the seed corpus
+  agent/graph.py          LangGraph agent: embed -> recall -> retrieve -> evaluate -> select -> remember
+  services/memory.py      the memory layer: recall, write, feedback scoring
+  services/retrievals.py  vector search + blended ranking
+  services/precedent.py   Bedrock reasoning: evaluate candidates, draft the pitch
+  services/embeddings.py  Titan V2 embeddings
+  services/extraction.py  PDF text extraction + Bedrock field extraction for Add a Case
+  services/bedrock.py     shared Bedrock JSON-response helper
+  models/                 SQLAlchemy models incl. the VECTOR(1024) type
+  static/                 landing page, the app UI (3 tabs), self-hosted fonts
+  main.py                 FastAPI: match/feedback/cases endpoints + static hosting
+scripts/                  schema, seeding, embedding, memory reset
+tests/                    runnable verification scripts
+data/engagements.json     the seed corpus
+demo/                     sample case-study PDF for the Add a Case demo
+vercel.json               Vercel function config (60s timeout)
 ```
 
 ## License

@@ -6,6 +6,7 @@ app/agent/graph.py; this module exists to expose it to the demo UI and to
 accept the feedback that steers future ranking.
 """
 
+import mimetypes
 import uuid
 from pathlib import Path
 from typing import Any, Optional
@@ -33,6 +34,11 @@ app = FastAPI(
 )
 
 STATIC_DIR = Path(__file__).parent / "static"
+
+# The system mimetypes database is inconsistent across hosts - macOS knows
+# .woff2, some Linux build images don't - so register it explicitly rather
+# than rely on whatever happens to be installed on the deploy target.
+mimetypes.add_type("font/woff2", ".woff2")
 
 
 @app.exception_handler(Exception)

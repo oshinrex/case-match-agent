@@ -10,5 +10,7 @@ __pycache__/
 .vscode/
 .idea/
 .claude/
-.vercel
-.env*
+.git/
+tests/
+docs/
+demo/
