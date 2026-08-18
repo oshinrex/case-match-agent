@@ -137,10 +137,9 @@ it is supposed to be reading.
 | **Amazon Bedrock — Nova** | Three jobs: judging whether a candidate set is strong enough (the decision that drives the agent's re-search loop), selecting the winner and drafting pitch language, and reading an uploaded case-study PDF to propose structured fields for the consultant to review. |
 | **IAM** | A dedicated `case-match-vercel` user, scoped to `bedrock:InvokeModel` on only the two models above — nothing else. Its access key lives as a write-only environment variable on the hosting platform, never committed to the repo. |
 
-The live demo is deployed on [Vercel](https://vercel.com) (see [Deploy](#deploy) below).
-A `Dockerfile` is also included if you'd rather run the same app as a container on AWS
-App Runner instead — either way, Bedrock is what's doing the actual thinking, and
-CockroachDB is what's remembering it.
+The live demo runs on [Vercel](https://vercel.com); a `Dockerfile` is also included if
+you'd rather run the same app as a container on AWS App Runner instead — either way,
+Bedrock is what's doing the actual thinking, and CockroachDB is what's remembering it.
 
 ---
 
@@ -209,79 +208,6 @@ development runs. It never touches the engagements table.
 | `GET /api/memory` | Recent agent runs. |
 | `GET /api/stats` | Live memory counters. |
 | `GET /health` | Liveness probe. |
-
----
-
-## Deploy
-
-### Vercel (what the live demo runs on)
-
-Vercel's Python runtime auto-detects the FastAPI app at `app/main.py` — no Dockerfile
-needed for this path.
-
-```bash
-npx vercel login
-npx vercel link              # creates/links the Vercel project
-
-npx vercel env add DATABASE_URL production
-npx vercel env add BEDROCK_REGION production
-npx vercel env add AWS_ACCESS_KEY_ID production       # from a scoped IAM user, below
-npx vercel env add AWS_SECRET_ACCESS_KEY production
-
-npx vercel deploy --prod
-```
-
-Function timeout is set in [`vercel.json`](vercel.json) (`maxDuration: 60`) — enough
-headroom for an agent run with several Bedrock calls in one request.
-
-**Use a scoped IAM user, not root or a personal profile's default credentials.** Create
-one limited to `bedrock:InvokeModel` on just the two models this app calls:
-
-```bash
-aws iam create-user --user-name case-match-vercel
-
-cat > bedrock-policy.json <<'EOF'
-{
-  "Version": "2012-10-17",
-  "Statement": [{
-    "Effect": "Allow",
-    "Action": "bedrock:InvokeModel",
-    "Resource": [
-      "arn:aws:bedrock:us-east-1::foundation-model/amazon.titan-embed-text-v2:0",
-      "arn:aws:bedrock:us-east-1::foundation-model/amazon.nova-lite-v1:0"
-    ]
-  }]
-}
-EOF
-
-aws iam put-user-policy --user-name case-match-vercel \
-  --policy-name BedrockInvokeCaseMatch --policy-document file://bedrock-policy.json
-
-aws iam create-access-key --user-name case-match-vercel
-```
-
-Feed the resulting `AccessKeyId` / `SecretAccessKey` into the `vercel env add` commands
-above — never into a committed file.
-
-### Alternative: AWS App Runner
-
-The repo also ships a `Dockerfile`, if you'd rather run the same app as a container on
-AWS compute instead of Vercel:
-
-```bash
-# build and push
-aws ecr create-repository --repository-name case-match-agent
-docker build -t case-match-agent .
-docker tag case-match-agent:latest <acct>.dkr.ecr.<region>.amazonaws.com/case-match-agent:latest
-aws ecr get-login-password | docker login --username AWS --password-stdin <acct>.dkr.ecr.<region>.amazonaws.com
-docker push <acct>.dkr.ecr.<region>.amazonaws.com/case-match-agent:latest
-```
-
-Then create an App Runner service from that image with:
-
-- Port `8080`, health check path `/health`
-- Environment variable `DATABASE_URL` (store as a secret)
-- An instance role granting `bedrock:InvokeModel`
 
 ---
 
